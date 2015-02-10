@@ -30,6 +30,9 @@ time_range_end = time_range_start + datetime.timedelta(seconds=3600*24)
 
 # end of config 
 
+print "Platform %s" % platform 
+print "time range: (%s,%s)" % (time_range_start.strftime('%Y%m%d%H%M%S'),time_range_end.strftime('%Y%m%d%H%M%S'))
+
 # choose a platform
 platform_passes_predict_file = "%s-%s-%s-passes.csv" % (time_range_start.strftime('%Y%m%d%H%M%S'), platform, aoi_name)
 
@@ -37,7 +40,7 @@ import os.path
 
 # pass prediction 
 
-if os.path.isfile(platform_passes_predict_file):
+if not os.path.isfile(platform_passes_predict_file): #cache predictions in file
 	# generate passes 
 	aoi_timeslots = generate_avhrr_platform_passes_over_aoi(platform, aoi_polygon, aoi_polygon_proj_string, time_range_start, time_range_end, 4000 )
 	print aoi_timeslots
@@ -60,6 +63,8 @@ import pickle
 with open(platform_passes_predict_file,'rb') as f:
     aoi_timeslots = pickle.load(f)
 
+print "Selected passes:"
+
 # filter aoi_slots 
 aoi_timeslots_tmp = aoi_timeslots
 aoi_timeslots = []
@@ -68,6 +73,7 @@ for slot in aoi_timeslots_tmp:
 		print "%s,%s,%5.1f%%" % (slot[0].strftime('%Y-%m-%d %H:%M:%S'),slot[1], slot[2])
 		aoi_timeslots.append(slot)
 
+print "Selected files for passes:"
 
 # match received files to passes
 import re
