@@ -26,6 +26,7 @@ Stage two:
 ----------
 
 While EumetCast or other granule files are received:
+
 1. Read prediction file
 2. Match timeslots of granules with predictions 
 3. Keep if matched else remove 
