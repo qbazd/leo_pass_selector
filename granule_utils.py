@@ -166,7 +166,7 @@ def generate_avhrr_platform_passes_over_aoi( platform, aoi_polygon, aoi_polygon_
 			int_percent = (granules_intersect_area / aoi_area * 100.0)
 
 			if len(current_pass) > 0 and int_percent > 0.0:
-				aoi_timeslots.append([current_pass[0], len(current_pass), int_percent])
+				aoi_timeslots.append({ 'time_slot': current_pass[0], 'slots': len(current_pass), 'aoi_cover': int_percent})
 
 			current_pass = []
 			granules_intersect_area = 0.0
@@ -183,9 +183,9 @@ def generate_avhrr_platform_passes_over_aoi( platform, aoi_polygon, aoi_polygon_
 # if granule is not over aoi return None
 def get_pass_for_granule(granule_time_slot_start, granule_time_slot_end,  aoi_timeslots):
 	for aoit in aoi_timeslots:
-		if granule_time_slot_start < aoit[0] and granule_time_slot_end > aoit[0]:
+		if granule_time_slot_start < aoit['time_slot'] and granule_time_slot_end > aoit['time_slot']:
 			return aoit
-		if granule_time_slot_start >= aoit[0] and granule_time_slot_start < (aoit[0] + datetime.timedelta(seconds = aoit[1] * 60) ):
+		if granule_time_slot_start >= aoit['time_slot'] and granule_time_slot_start < (aoit['time_slot'] + datetime.timedelta(seconds = aoit['slots'] * 60) ):
 			return aoit
 	return None
 
@@ -198,9 +198,9 @@ def save_passes_as_shp(filemane, platform, aoi_polygon, aoi_polygon_proj_string,
 	schema = {'geometry': 'Polygon','properties': {'platform': 'str','time_slot': 'str','slots': 'int', 'cover': 'float'}}
 	features = []
 	for aoit in aoi_timeslots:
-		platform_tle = read_tle_from_file_db(platform, 'current.tle', aoit[0])
-		poly = transform(aoi_polygon_proj, Polygon(get_scan_avhrr_area(platform_tle, aoit[0], aoit[1])))
-		feat = {'geometry': mapping(poly),'properties': {'platform': platform, 'time_slot': aoit[0].strftime('%Y-%m-%d %H:%M:%S UTC'), 'slots': aoit[1], 'cover': aoit[2] }}
+		platform_tle = read_tle_from_file_db(platform, 'current.tle', aoit['time_slot'])
+		poly = transform(aoi_polygon_proj, Polygon(get_scan_avhrr_area(platform_tle, aoit['time_slot'], aoit['slots'])))
+		feat = {'geometry': mapping(poly),'properties': {'platform': platform, 'time_slot': aoit['time_slot'].strftime('%Y-%m-%d %H:%M:%S UTC'), 'slots': aoit['slots'], 'cover': aoit['aoi_cover'] }}
 		features.append(feat)
 
 	feat = {'geometry': mapping(aoi_polygon),'properties': {'platform': "aoi", 'time_slot': "-", 'slots': 0, 'cover': 999  }}

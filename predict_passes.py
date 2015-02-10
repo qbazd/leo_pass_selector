@@ -34,43 +34,38 @@ print "Platform %s" % platform
 print "time range: (%s,%s)" % (time_range_start.strftime('%Y%m%d%H%M%S'),time_range_end.strftime('%Y%m%d%H%M%S'))
 
 # choose a platform
-platform_passes_predict_file = "%s-%s-%s-passes.csv" % (time_range_start.strftime('%Y%m%d%H%M%S'), platform, aoi_name)
+platform_passes_predict_file = "%s-%s-%s-passes.yaml" % (time_range_start.strftime('%Y%m%d%H%M%S'), platform, aoi_name)
 
 import os.path
 
 # pass prediction 
 
-if not os.path.isfile(platform_passes_predict_file): #cache predictions in file
-	# generate passes 
+if os.path.isfile(platform_passes_predict_file): #cache predictions in file
+	# generate passes
 	aoi_timeslots = generate_avhrr_platform_passes_over_aoi(platform, aoi_polygon, aoi_polygon_proj_string, time_range_start, time_range_end, 4000 )
-	print aoi_timeslots
+	#print aoi_timeslots
 	# eventualy write to csv file
-	import pickle
-	with open(platform_passes_predict_file, 'wb') as f:
-	    pickle.dump(aoi_timeslots, f)
-
-	# receiving data filter can be applied before or after write of prediction
-
+	import yaml
+ 	yaml.dump(aoi_timeslots, file(platform_passes_predict_file, 'w')) 
 
 	# save slots shp (optional - debug or else)
-	save_passes_as_shp(time_range_start.strftime('%Y%m%d%H%M%S') + ("-%s-%s.shp" % (platform,aoi_name)), 
+	save_passes_as_shp(time_range_start.strftime('%Y%m%d%H%M%S') + ("-%s-%s.shp" % (platform, aoi_name)), 
 		platform, aoi_polygon, aoi_polygon_proj_string, aoi_timeslots)
 
+	aoi_timeslots = None
 
 # read aoi_passes_timeslots from file
-aoi_timeslots = None
-import pickle
-with open(platform_passes_predict_file,'rb') as f:
-    aoi_timeslots = pickle.load(f)
+import yaml
+aoi_timeslots = yaml.load(file(platform_passes_predict_file, 'r')) 
 
 print "Selected passes:"
 
-# filter aoi_slots 
+# filter aoi_slots
 aoi_timeslots_tmp = aoi_timeslots
 aoi_timeslots = []
 for slot in aoi_timeslots_tmp:
-	if slot[2] > 10.0 :
-		print "%s,%s,%5.1f%%" % (slot[0].strftime('%Y-%m-%d %H:%M:%S'),slot[1], slot[2])
+	if slot['aoi_cover'] > 10.0 :
+		print "%s,%s,%5.1f%%" % (slot['time_slot'].strftime('%Y-%m-%d %H:%M:%S'),slot['slots'], slot['aoi_cover'])
 		aoi_timeslots.append(slot)
 
 print "Selected files for passes:"
