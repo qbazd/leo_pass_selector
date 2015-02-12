@@ -23,14 +23,33 @@ from pyorbital.tlefile import Tle
 #print 'check tles'
 #print read_tle_from_file_db('METOP-A', 'current.tle',time_slot)
 
-def read_tle_from_file_db(platform, tles_file,time_slot):
+#tle cache
+import requests
+# gets tle from https://www.space-track.org
+# tle from time_range_end -3 days .. time_range_end
+def get_tle_spacetrack(time_range_end, login, password):
+	payload = {'identity' : login, 'password': password}
+	base_url = "https://www.space-track.org"
+	range_text = (time_range_end - datetime.timedelta(seconds=3600*24*3)).strftime('%Y-%m-%d') + "--" +  time_range_end.strftime('%Y-%m-%d')
+	r1 = requests.post('%s/auth/login' % base_url, data= payload )
+	tle_url = '%s/basicspacedata/query/class/tle/EPOCH/%s/NORAD_CAT_ID/29499,38771,33591/orderby/EPOCH ASC/format/3le' % (base_url, range_text)
+	r2 = requests.get(tle_url, cookies=r1.cookies)
+	if r2.status_code != 200:
+		raise IOError('Spacetrack login error')
+	#print (r1.status_code, r2.status_code)
+	return r2.text
+	
+def read_tle_from_file_db(platform, tles_file, time_slot):
+	import re
 	platform = platform.strip().upper()
 	tle = None
 	last_tle = None
 	fp = open(tles_file)
 	for l0 in fp:
 		l1, l2 = fp.next(), fp.next()
-		if l0.strip()[0:2] == '0 ' and l0.strip()[2:] == platform: # update for line 3 format 
+		if l0.strip() == platform or (l0.strip()[0:2] == '0 ' and l0.strip()[2:] == platform): # update for line 3 format 
+			l1 = re.sub(r'\+(\d|\.)', ' \\1', l1) # hack for old tle files from 2012
+			l2 = re.sub(r'\+(\d|\.)', ' \\1', l2) # hack for old tle files from 2012
 			tle = Tle(platform, line1=l1, line2=l2) #read every tle and find the most suitable by the tle.epoch
 			#print tle.epoch
 			if tle.epoch > time_slot:
@@ -120,7 +139,7 @@ from functools import partial
 import pyproj
 from geopy.distance import great_circle
 
-def generate_avhrr_platform_passes_over_aoi( platform, aoi_polygon, aoi_polygon_proj_string, time_range_start, time_range_end, max_distance_km):
+def generate_avhrr_platform_passes_over_aoi( platform, aoi_polygon, aoi_polygon_proj_string, time_range_start, time_range_end, max_distance_km, platform_tle):
 
 	ll_proj = pyproj.Proj(init='epsg:4326')
 	aoi_polygon_proj = pyproj.Proj(aoi_polygon_proj_string)
@@ -144,7 +163,7 @@ def generate_avhrr_platform_passes_over_aoi( platform, aoi_polygon, aoi_polygon_
 		in_aoi = False
 
 		# that is cruel ;)
-		platform_tle = read_tle_from_file_db(platform, 'current.tle', time_slot)
+		#platform_tle = read_tle_from_file_db(platform, 'current.tle', time_slot)
 
 		# first, compute distance between aoi centroid and start of granule nadir 
 		nadir_ll = get_avhrr_nadir_ll(platform_tle, time_slot)
@@ -158,9 +177,11 @@ def generate_avhrr_platform_passes_over_aoi( platform, aoi_polygon, aoi_polygon_
 		if in_aoi == True:
 			intersection_proj = aoi_polygon.intersection(granule_polygon)
 			granules_intersect_area += intersection_proj.area / 1000000.0 # m^2 -> km^2
-
 			current_pass.append(time_slot)
+
 			#print "%s %d" % (time_slot.strftime('%Y-%m-%d %H:%M:%S UTC'), in_aoi)
+			#print "%s,%.0f,%d" % (time_slot.strftime('%Y-%m-%d %H:%M:%S'), distance, in_aoi)
+
 
 		if last_intersects == True and in_aoi == False: # pass ends
 			int_percent = (granules_intersect_area / aoi_area * 100.0)
@@ -190,7 +211,7 @@ def get_pass_for_granule(granule_time_slot_start, granule_time_slot_end,  aoi_ti
 	return None
 
 # write sattelite passes as shapefile
-def save_passes_as_shp(filemane, platform, aoi_polygon, aoi_polygon_proj_string, aoi_timeslots):
+def save_passes_as_shp(filemane, platform, aoi_polygon, aoi_polygon_proj_string, aoi_timeslots, platform_tle):
 	from shapely.geometry import mapping, Polygon
 
 	aoi_polygon_proj = pyproj.Proj(aoi_polygon_proj_string)
@@ -198,7 +219,7 @@ def save_passes_as_shp(filemane, platform, aoi_polygon, aoi_polygon_proj_string,
 	schema = {'geometry': 'Polygon','properties': {'platform': 'str','time_slot': 'str','slots': 'int', 'cover': 'float'}}
 	features = []
 	for aoit in aoi_timeslots:
-		platform_tle = read_tle_from_file_db(platform, 'current.tle', aoit['time_slot'])
+		#platform_tle = read_tle_from_file_db(platform, 'current.tle', aoit['time_slot'])
 		poly = transform(aoi_polygon_proj, Polygon(get_scan_avhrr_area(platform_tle, aoit['time_slot'], aoit['slots'])))
 		feat = {'geometry': mapping(poly),'properties': {'platform': platform, 'time_slot': aoit['time_slot'].strftime('%Y-%m-%d %H:%M:%S UTC'), 'slots': aoit['slots'], 'cover': aoit['aoi_cover'] }}
 		features.append(feat)
