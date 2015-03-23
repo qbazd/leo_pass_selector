@@ -65,7 +65,6 @@ for platform in platforms:
 	tle = read_tle_from_file_db(platform, tle_cache_file, time_range_start)
 	if tle == None:
 		print "no siutable tle found for %s platform" % platform
-		tles[platform] = []
 		aoi_predicted_passes[platform] = []
 	else:
 		# save-selected TLE
@@ -78,7 +77,7 @@ for platform in platforms:
 tle_file = time_range_start.strftime('%Y%m%d_%H%M%S-avhrr.tle')
 
 with open(tle_file, 'w') as ftle:
-	for platform in platforms:
+	for platform in tles.keys():
 		ftle.write(tles[platform].platform)
 		ftle.write('\n')
 		ftle.write(tles[platform].line1)
