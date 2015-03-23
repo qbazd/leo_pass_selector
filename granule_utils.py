@@ -27,12 +27,12 @@ from pyorbital.tlefile import Tle
 import requests
 # gets tle from https://www.space-track.org
 # tle from time_range_end -3 days .. time_range_end
-def get_tle_spacetrack(time_range_end, login, password):
+def get_tle_spacetrack(time_range_end, noradids ,login, password):
 	payload = {'identity' : login, 'password': password}
 	base_url = "https://www.space-track.org"
 	range_text = (time_range_end - datetime.timedelta(seconds=3600*24*3)).strftime('%Y-%m-%d') + "--" +  time_range_end.strftime('%Y-%m-%d')
 	r1 = requests.post('%s/auth/login' % base_url, data= payload )
-	tle_url = '%s/basicspacedata/query/class/tle/EPOCH/%s/NORAD_CAT_ID/29499,38771,33591/orderby/EPOCH ASC/format/3le' % (base_url, range_text)
+	tle_url = '%s/basicspacedata/query/class/tle/EPOCH/%s/NORAD_CAT_ID/%s/orderby/EPOCH ASC/format/3le' % (base_url, range_text, noradids)
 	r2 = requests.get(tle_url, cookies=r1.cookies)
 	if r2.status_code != 200:
 		raise IOError('Spacetrack login error')
@@ -139,7 +139,7 @@ from functools import partial
 import pyproj
 from geopy.distance import great_circle
 
-def generate_avhrr_platform_passes_over_aoi( platform, aoi_polygon, aoi_polygon_proj_string, time_range_start, time_range_end, max_distance_km, platform_tle):
+def generate_avhrr_platform_passes_over_aoi(platform_tle, aoi_polygon, aoi_polygon_proj_string, time_range_start, time_range_end, max_distance_km):
 
 	ll_proj = pyproj.Proj(init='epsg:4326')
 	aoi_polygon_proj = pyproj.Proj(aoi_polygon_proj_string)
@@ -161,9 +161,6 @@ def generate_avhrr_platform_passes_over_aoi( platform, aoi_polygon, aoi_polygon_
 	while True:
 
 		in_aoi = False
-
-		# that is cruel ;)
-		#platform_tle = read_tle_from_file_db(platform, 'current.tle', time_slot)
 
 		# first, compute distance between aoi centroid and start of granule nadir 
 		nadir_ll = get_avhrr_nadir_ll(platform_tle, time_slot)
@@ -211,19 +208,22 @@ def get_pass_for_granule(granule_time_slot_start, granule_time_slot_end,  aoi_ti
 	return None
 
 # write sattelite passes as shapefile
-def save_passes_as_shp(filemane, platform, aoi_polygon, aoi_polygon_proj_string, aoi_timeslots, platform_tle):
+def save_passes_as_shp(filemane, aoi_polygon, aoi_polygon_proj_string, aoi_timeslots, tles):
 	from shapely.geometry import mapping, Polygon
 
 	aoi_polygon_proj = pyproj.Proj(aoi_polygon_proj_string)
 
 	schema = {'geometry': 'Polygon','properties': {'platform': 'str','time_slot': 'str','slots': 'int', 'cover': 'float'}}
-	features = []
-	for aoit in aoi_timeslots:
-		#platform_tle = read_tle_from_file_db(platform, 'current.tle', aoit['time_slot'])
-		poly = transform(aoi_polygon_proj, Polygon(get_scan_avhrr_area(platform_tle, aoit['time_slot'], aoit['slots'])))
-		feat = {'geometry': mapping(poly),'properties': {'platform': platform, 'time_slot': aoit['time_slot'].strftime('%Y-%m-%d %H:%M:%S UTC'), 'slots': aoit['slots'], 'cover': aoit['aoi_cover'] }}
-		features.append(feat)
 
-	feat = {'geometry': mapping(aoi_polygon),'properties': {'platform': "aoi", 'time_slot': "-", 'slots': 0, 'cover': 999  }}
+	features = []
+
+	for platform in aoi_timeslots.keys():
+		for aoit in aoi_timeslots[platform]:
+			poly = transform(aoi_polygon_proj, Polygon(get_scan_avhrr_area( tles[platform], aoit['time_slot'], aoit['slots'] )))
+			feat = {'geometry': mapping(poly),'properties': {'platform': platform, 'time_slot': aoit['time_slot'].strftime('%Y-%m-%d %H:%M:%S UTC'), 'slots': aoit['slots'], 'cover': aoit['aoi_cover'] }}
+			features.append(feat)
+
+	feat = {'geometry': mapping(aoi_polygon),'properties': {'platform': "aoi", 'time_slot': "-", 'slots': 0, 'cover': -999  }}
 	features.append(feat)
+
 	write_shp(filemane, schema, features, aoi_polygon_proj_string)

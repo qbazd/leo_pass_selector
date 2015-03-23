@@ -7,102 +7,91 @@ logging.basicConfig()
 
 from granule_utils import generate_avhrr_platform_passes_over_aoi, get_pass_for_granule,save_passes_as_shp, read_tle_from_file_db, get_tle_spacetrack
 
-#import urllib
-#import os
-#import glob
 import numpy as np
 import datetime
 from shapely.geometry import Polygon
+import os.path
 
-#load credentials
+#load config
 import yaml
-spacetrack = yaml.load(file('spacetrack.yaml', 'r')) 
+app_config = yaml.load(file('predict_passes_config.yaml', 'r')) 
+
+import argparse
+parser = argparse.ArgumentParser(description='Predict passes for one day')
+
+parser.add_argument('--day', action="store")
+
+opts = parser.parse_args()
+import datetime
+
+time_range_start = datetime.datetime.strptime(opts.day, '%Y-%m-%d')
 
 # eventualy read aoi_polygon from shapefile  
 aoi_polygon_proj_string = "+proj=laea +lat_0=52 +lon_0=20  +x_0=4321000 +y_0=3210000 +ellps=GRS80 +units=m +no_defs"
 aoi_polygon = Polygon( ((3628000.000, 4776000.000),(3628000.000, 3368000.000),(4908000.000, 3368000.000),(4908000.000, 4776000.000)) )
 aoi_name = 'sb'
 
-platform = 'METOP-A'
-
-# "METOP-A", "METOP-B", "NOAA 19"
-#aoi_area = aoi_polygon.area / 1000000 # m^2 -> km^2
-#print "%s area: %.0f" % (aoi_name , aoi_area)
-
-time_range_start = datetime.datetime(2012, 07, 26, 00, 00, 0)
-time_range_start = datetime.datetime(2015, 01, 26, 00, 00, 0)
-time_range_end = time_range_start + datetime.timedelta(seconds=3600*24)
+platforms = app_config['platforms']
 
 # end of config 
 
-print "Platform %s" % platform 
-print "time range: (%s,%s)" % (time_range_start.strftime('%Y%m%d%H%M%S'),time_range_end.strftime('%Y%m%d%H%M%S'))
+time_range_end = time_range_start + datetime.timedelta(seconds=3600*24)
 
-# choose a platform
-platform_passes_predict_file = "%s-%s-%s-passes.yaml" % (time_range_start.strftime('%Y%m%d%H%M%S'), platform, aoi_name)
+print "Time range: (%s,%s)" % (time_range_start.strftime('%Y%m%d_%H%M%S'),time_range_end.strftime('%Y%m%d_%H%M%S'))
 
-tle_file = "%s-cache.tle" % time_range_start.strftime('%Y%m%d')
+passes_predict_file = "%s-%s-avhrr-passes.yaml" % (time_range_start.strftime('%Y%m%d_%H%M%S'), aoi_name)
 
-import os.path
+if os.path.isfile(passes_predict_file): #cache predictions in file
+	print "passes already predicted in %s Abording!" % passes_predict_file
+	exit()
 
-if not os.path.isfile(tle_file): #cache tle in file
-	tle = get_tle_spacetrack(time_range_end, spacetrack['login'], spacetrack['password'])
-	with open(tle_file, 'w') as ftle:
+tle_cache_file = "%s-cache.tle" % time_range_start.strftime('%Y%m%d')
+
+if not os.path.isfile(tle_cache_file): #cache tle in file
+	print "Downloading TLE"
+	tle = get_tle_spacetrack(time_range_end, ",".join(app_config['platforms_ids']), app_config['spacetrack_login'], app_config['spacetrack_password'])
+	with open(tle_cache_file, 'w') as ftle:
 		ftle.write(tle)
 		ftle.close
 
-# select most siutable tle for platform and time
-tle = read_tle_from_file_db(platform, tle_file, time_range_start)
-if tle == None:
-	print "no siutable tle found"
-	exit()
-#print tle
+tles = {} #tle by platform
+aoi_predicted_passes = {} # passes by platform
 
 # pass prediction 
-if not os.path.isfile(platform_passes_predict_file): #cache predictions in file
-	# generate passes
-	aoi_timeslots = generate_avhrr_platform_passes_over_aoi(platform, aoi_polygon, aoi_polygon_proj_string, time_range_start, time_range_end, 7000 ,tle )
-	#print aoi_timeslots
-	# eventualy write to csv file
-	import yaml
- 	yaml.dump(aoi_timeslots, file(platform_passes_predict_file, 'w')) 
+for platform in platforms:
+	print "Platform %s" % platform 
 
-	# save slots shp (optional - debug or else)
-	save_passes_as_shp(time_range_start.strftime('%Y%m%d%H%M%S') + ("-%s-%s.shp" % (platform, aoi_name)), 
-		platform, aoi_polygon, aoi_polygon_proj_string, aoi_timeslots, tle)
+	# select most siutable tle for platform and time
+	tle = read_tle_from_file_db(platform, tle_cache_file, time_range_start)
+	if tle == None:
+		print "no siutable tle found for %s platform" % platform
+		tles[platform] = []
+		aoi_predicted_passes[platform] = []
+	else:
+		# save-selected TLE
+		tles[platform] = tle
+		# generate passes
+		aoi_predicted_passes[platform] = generate_avhrr_platform_passes_over_aoi(tle, aoi_polygon, aoi_polygon_proj_string, time_range_start, time_range_end, 7000)
 
-	aoi_timeslots = None
 
-# read aoi_passes_timeslots from file
-import yaml
-aoi_timeslots = yaml.load(file(platform_passes_predict_file, 'r')) 
+# write tles
+tle_file = time_range_start.strftime('%Y%m%d_%H%M%S-avhrr.tle')
 
-print "Selected passes:"
+with open(tle_file, 'w') as ftle:
+	for platform in platforms:
+		ftle.write(tles[platform].platform)
+		ftle.write('\n')
+		ftle.write(tles[platform].line1)
+		ftle.write('\n')
+		ftle.write(tles[platform].line2)
+		ftle.write('\n')
+		ftle.close
 
-# filter aoi_slots
-aoi_timeslots_tmp = aoi_timeslots
-aoi_timeslots = []
-for slot in aoi_timeslots_tmp:
-	if slot['aoi_cover'] > 50.0 :
-		print "%s,%s,%5.1f%%" % (slot['time_slot'].strftime('%Y-%m-%d %H:%M:%S'),slot['slots'], slot['aoi_cover'])
-		aoi_timeslots.append(slot)
+#write predicted passes
+yaml.dump(aoi_predicted_passes, file(passes_predict_file, 'w')) 
 
-print "Selected files for passes:"
+# write slots shp (optional - debug or else)
+save_passes_as_shp(time_range_start.strftime('%Y%m%d_%H%M%S') + ("-%s-avhrr-passes.shp" % (aoi_name)), 
+	aoi_polygon, aoi_polygon_proj_string, aoi_predicted_passes, tles)
 
-# match received files to passes
-import re
-fp = open('AVHR.list')
-
-for l0 in fp:
-	match = re.match(r'.*/AVHR_HRP_00_M02_(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2}).*', l0.strip())
-	if match:
-		time_slot = datetime.datetime(int(match.group(1)),int(match.group(2)),int(match.group(3)),int(match.group(4)),int(match.group(5)),int(match.group(6)))
-		if time_slot > time_range_end or time_slot < time_range_start:
-			continue
-		slot_for_granule = get_pass_for_granule(time_slot, time_slot + datetime.timedelta(seconds=60), aoi_timeslots)
-		if slot_for_granule != None:
-			print "%s,%s,%s" % (slot_for_granule['time_slot'].strftime('%Y-%m-%d %H:%M:%S'),slot_for_granule['slots'],l0.strip())
-		#else:
-			#print "rm %s" % l0.strip()
-
-fp.close()
+print "Prediction done"
