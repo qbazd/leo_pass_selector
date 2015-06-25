@@ -1,4 +1,7 @@
 predict_passes_config.yaml
+tmp/
+predictions/
+log_analisis/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

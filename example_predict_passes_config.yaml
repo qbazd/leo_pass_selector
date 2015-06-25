@@ -1,6 +1,7 @@
 ---
 spacetrack_login: your_login_on_spacetrack.org
 spacetrack_password: your_password_on_spacetrack.org
+output_directory: ./predictions
 platforms:
 - NOAA 12
 - NOAA 13
